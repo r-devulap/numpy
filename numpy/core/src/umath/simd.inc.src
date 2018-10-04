@@ -395,6 +395,31 @@ static NPY_INLINE npy_double sse2_horizontal_@VOP@___m128d(__m128d v)
     return r;
 }
 
+#ifdef __AVX2__
+static NPY_INLINE npy_double avx2_horizontal_@VOP@___m256d(__m256d v)
+{
+    npy_double r;				    /*[a,b,c,d]*/
+    __m256d tmp1 = _mm256_permute2f128_pd(v,v,1);    /*[c,d,a,b]*/
+    tmp1 = _mm256_@VOP@_pd(v, tmp1);		    /*[m(ac),m(bd),m(ca),m(db)]*/
+    __m256d tmp2 = _mm256_permute_pd(tmp1, 5);	    /*[m(bd),m(ac),m(db),m(ca)]*/
+    _mm_store_sd(&r, _mm256_extractf128_pd(_mm256_@VOP@_pd(tmp1, tmp2),0));
+    /*[m(abcd),m(abcd),...]*/
+    return r;
+}
+static NPY_INLINE npy_float avx2_horizontal_@VOP@___m256(__m256 v)
+{
+    npy_float r;				    /*a,b,c,d,e,f,g,h*/
+    __m256 tmp1 = _mm256_permute2f128_ps(v,v,1);   /*e,f,g,h,a,b,c,d*/
+    tmp1 = _mm256_@VOP@_ps(v,tmp1);		    /*m(ae),m(bf).m(cg),m(dh)*/
+    __m256 tmp2 = _mm256_permute_ps(tmp1,177);	    /*m(bf),m(ae),m(dh),m(cg)*/
+    tmp2 = _mm256_@VOP@_ps(tmp1,tmp2);		    /*m(aebf),m(aebf),m(cgdh),m(cgdh)*/
+    __m256 tmp3 = _mm256_permute_ps(tmp2,27);	    /*m(cgdh),m(cgdh),m(aebf),m(aebf)*/
+    _mm_store_ss(&r, _mm256_extractf128_ps(_mm256_@VOP@_ps(tmp3, tmp2),0));
+    /*m(abcdefgh),m(abcdefgh),...*/
+    return r;
+}
+#endif
+
 /**end repeat**/
 
 /**begin repeat
@@ -1027,9 +1052,70 @@ sse2_@kind@_@TYPE@(@type@ * op, @type@ * ip, const npy_intp n)
 static void
 sse2_@kind@_@TYPE@(@type@ * ip, @type@ * op, const npy_intp n)
 {
+#ifdef __AVX512F__
     const npy_intp stride = VECTOR_SIZE_BYTES / (npy_intp)sizeof(@type@);
     LOOP_BLOCK_ALIGN_VAR(ip, @type@, VECTOR_SIZE_BYTES) {
-        *op = (npy_isnan(*op) || *op @OP@ ip[i]) ? *op : ip[i];
+        *op = (*op @OP@ ip[i] || npy_isnan(*op)) ? *op : ip[i];
+    }
+    assert(n < (stride) || npy_is_aligned(&ip[i], VECTOR_SIZE_BYTES));
+    if (i + 3 * stride <= n) {
+        /* load the first elements */
+        @vtype512@ c1 = @vpre512@_load_@vsuf@((@type@*)&ip[i]);
+        @vtype512@ c2 = @vpre512@_load_@vsuf@((@type@*)&ip[i + stride]);
+        i += 2 * stride;
+
+        /* minps/minpd will set invalid flag if nan is encountered */
+        npy_clear_floatstatus_barrier((char*)&c1);
+        LOOP_BLOCKED(@type@, 2 * VECTOR_SIZE_BYTES) {
+            @vtype512@ v1 = @vpre512@_load_@vsuf@((@type@*)&ip[i]);
+            @vtype512@ v2 = @vpre512@_load_@vsuf@((@type@*)&ip[i + stride]);
+            c1 = @vpre512@_@VOP@_@vsuf@(c1, v1);
+            c2 = @vpre512@_@VOP@_@vsuf@(c2, v2);
+        }
+        c1 = @vpre512@_@VOP@_@vsuf@(c1, c2);
+
+        if (npy_get_floatstatus_barrier((char*)&c1) & NPY_FPE_INVALID) {
+            *op = @nan@;
+        }
+        else {
+            @type@ tmp = @vpre512@_reduce_@VOP@_@vsuf@(c1);
+            *op  = (*op @OP@ tmp || npy_isnan(*op)) ? *op : tmp;
+        }
+    }
+#elif __AVX2__
+    const npy_intp stride = VECTOR_SIZE_BYTES / (npy_intp)sizeof(@type@);
+    LOOP_BLOCK_ALIGN_VAR(ip, @type@, VECTOR_SIZE_BYTES) {
+        *op = (*op @OP@ ip[i] || npy_isnan(*op)) ? *op : ip[i];
+    }
+    assert(n < (stride) || npy_is_aligned(&ip[i], VECTOR_SIZE_BYTES));
+    if (i + 3 * stride <= n) {
+        /* load the first elements */
+        @vtype256@ c1 = @vpre256@_load_@vsuf@((@type@*)&ip[i]);
+        @vtype256@ c2 = @vpre256@_load_@vsuf@((@type@*)&ip[i + stride]);
+        i += 2 * stride;
+
+        /* minps/minpd will set invalid flag if nan is encountered */
+        npy_clear_floatstatus_barrier((char*)&c1);
+        LOOP_BLOCKED(@type@, 2 * VECTOR_SIZE_BYTES) {
+            @vtype256@ v1 = @vpre256@_load_@vsuf@((@type@*)&ip[i]);
+            @vtype256@ v2 = @vpre256@_load_@vsuf@((@type@*)&ip[i + stride]);
+            c1 = @vpre256@_@VOP@_@vsuf@(c1, v1);
+            c2 = @vpre256@_@VOP@_@vsuf@(c2, v2);
+        }
+        c1 = @vpre256@_@VOP@_@vsuf@(c1, c2);
+
+        if (npy_get_floatstatus_barrier((char*)&c1) & NPY_FPE_INVALID) {
+            *op = @nan@;
+        }
+        else {
+            @type@ tmp = avx2_horizontal_@VOP@_@vtype256@(c1);
+            *op  = (*op @OP@ tmp || npy_isnan(*op)) ? *op : tmp;
+        }
+    }
+#else
+    const npy_intp stride = VECTOR_SIZE_BYTES / (npy_intp)sizeof(@type@);
+    LOOP_BLOCK_ALIGN_VAR(ip, @type@, VECTOR_SIZE_BYTES) {
+        *op = (*op @OP@ ip[i] || npy_isnan(*op)) ? *op : ip[i];
     }
     assert(n < (stride) || npy_is_aligned(&ip[i], VECTOR_SIZE_BYTES));
     if (i + 3 * stride <= n) {
@@ -1056,6 +1142,7 @@ sse2_@kind@_@TYPE@(@type@ * ip, @type@ * op, const npy_intp n)
             *op  = (npy_isnan(*op) || *op @OP@ tmp) ? *op : tmp;
         }
     }
+#endif
     LOOP_BLOCKED_END {
         *op  = (npy_isnan(*op) || *op @OP@ ip[i]) ? *op : ip[i];
     }
