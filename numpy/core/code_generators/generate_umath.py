@@ -646,6 +646,8 @@ defdict = {
     Ufunc(1, 1, None,
           docstrings.get('numpy.core.umath.cos'),
           None,
+          TD('e', f='cos', astype={'e':'f'}),
+          TD(inexactvec),
           TD(inexact, f='cos', astype={'e':'f'}),
           TD(P, f='cos'),
           ),

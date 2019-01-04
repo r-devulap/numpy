@@ -161,6 +161,8 @@ NPY_NO_EXPORT void
  */
 NPY_NO_EXPORT void
 @TYPE@_sqrt(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func));
+NPY_NO_EXPORT void
+@TYPE@_cos(char **args, npy_intp *dimensions, npy_intp *steps, void *NPY_UNUSED(func));
 /**end repeat**/
 
 /**begin repeat

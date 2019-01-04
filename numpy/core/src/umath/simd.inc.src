@@ -33,6 +33,23 @@
 #include <string.h> /* for memcpy */
 
 #define VECTOR_SIZE_BYTES 16
+double ifact[17] = {0.0,
+		    1.0,
+		    0.5,
+		    0.16666666666666666,
+		    0.041666666666666664,
+		    0.008333333333333333,
+		    0.001388888888888889,
+		    0.0001984126984126984,
+		    2.48015873015873E-05,
+		    2.7557319223985893E-06,
+		    2.755731922398589E-07,
+		    2.505210838544172E-08,
+		    2.08767569878681E-09,
+		    1.6059043836821613E-10,
+		    1.1470745597729725E-11,
+		    7.647163731819816E-13,
+		    2.8114572543455206E-15};
 
 static NPY_INLINE npy_uintp
 abs_ptrdiff(char *a, char *b)
@@ -129,9 +146,9 @@ abs_ptrdiff(char *a, char *b)
  */
 
 /**begin repeat1
- * #func = sqrt, absolute, negative, minimum, maximum#
- * #check = IS_BLOCKABLE_UNARY*3, IS_BLOCKABLE_REDUCE*2 #
- * #name = unary*3, unary_reduce*2#
+ * #func = cos, sqrt, absolute, negative, minimum, maximum#
+ * #check = IS_BLOCKABLE_UNARY*4, IS_BLOCKABLE_REDUCE*2 #
+ * #name = unary*4, unary_reduce*2#
  */
 
 #if @vector@ && defined NPY_HAVE_SSE2_INTRINSICS
@@ -414,6 +431,7 @@ static NPY_INLINE npy_double sse2_horizontal_@VOP@___m128d(__m128d v)
  *  #nan = NPY_NANF, NPY_NAN#
  *  #double = 0, 1#
  *  #cast = _mm_castps_si128, _mm_castpd_si128#
+ *  #numelem = 16,8#
  */
 
 
@@ -944,6 +962,131 @@ sse2_binary_scalar2_@kind@_@TYPE@(npy_bool * op, @type@ * ip1, @type@ * ip2, npy
     }
 }
 /**end repeat1**/
+
+inline @type@ cosine_@vsufs@(@type@ x){
+
+    x = fmodf(x, (@type@)M_PI*2); 
+    x = fabs(x);
+    int quadrant = x * (2/M_PI); // 0,1,2,3
+    x = x - quadrant*M_PI/2;
+    if (quadrant == 1)
+	x = -1*x;
+    @type@ negx2 = -x*x;
+    @type@ cos = 0;
+    if ((quadrant == 0) || (quadrant == 2)){
+	cos = ifact[8] + negx2*ifact[10];
+	cos = ifact[6] + negx2*cos;
+	cos = ifact[4] + negx2*cos;
+	cos = ifact[2] + negx2*cos;
+	cos = 1 + negx2*cos;
+	if (quadrant == 2)
+	    cos=-1*cos;
+    }
+    else {
+	cos = ifact[9] + negx2*ifact[11];
+	cos = ifact[7] + negx2*cos;
+	cos = ifact[5] + negx2*cos;
+	cos = ifact[3] + negx2*cos;
+	cos = 1 + negx2*cos;
+	cos = x*cos;
+    }
+    return cos;
+}
+
+#ifdef __AVX512F__
+__mmask@numelem@ NPY_INLINE getquadrantmask_@vsuf@(@vtype512@ x, @type@ fmin, @type@ fmax){
+    __mmask@numelem@ m1 = _mm512_cmp_@vsuf@_mask(
+				x, _mm512_set1_@vsuf@(fmin), 29);// CMP_GE_OQ
+    __mmask@numelem@ m2 = _mm512_cmp_@vsuf@_mask(
+				x, _mm512_set1_@vsuf@(fmax), 17);// CMP_LT_OQ
+    return _mm512_kand(m1,m2);
+}
+#endif
+
+static void
+sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
+{
+#ifdef __AVX512F__
+    printf("my vectorized cos\n");
+    const npy_intp vector_size_bytes = 64;
+    @vtype512@ invfact[16];
+    for (int ii=0; ii<16; ii++)
+	invfact[ii] = _mm512_set1_@vsuf@((@type@)ifact[ii+1]);
+    @vtype512@ negone = _mm512_set1_@vsuf@(-1.00);
+    @vtype512@ one = _mm512_set1_@vsuf@(1.00);
+    @vtype512@ pi_o_2 = _mm512_set1_@vsuf@(M_PI/2);
+    @vtype512@ pi = _mm512_set1_@vsuf@(M_PI);
+    @vtype512@ pi3_o_2 = _mm512_set1_@vsuf@(1.5*M_PI);
+    @vtype512@ twopi = _mm512_set1_@vsuf@(2*M_PI);
+    __mmask@numelem@ maskq1, maskq2, maskq3, maskq4, maskcos, masksin;
+
+    /* store v/s storeu does not seem to affect performance at all*/
+    while(n >= vector_size_bytes){
+	@vtype512@ x  = _mm512_loadu_@vsuf@((@vtype512@ *)ip);
+	// Eliminate negative numbers: cos(-x) = cos(x)
+	// gcc 7.4 has a bug, _mm512_abs_pd takes __m512 instead of __m512d 
+	x = _mm512_abs_@vsuf@((__m512)x); 
+	
+	// Transform x --> [0,2M_PI]; x = x - floor(x/2pi)*2pi
+	x = _mm512_sub_@vsuf@(x, _mm512_mul_@vsuf@(
+			    _mm512_floor_@vsuf@(
+			    _mm512_div_@vsuf@(x,twopi)), twopi));
+	// Get mask for 4 quadrants:
+	maskq1 = getquadrantmask_@vsuf@(x, 0,M_PI/2);
+	maskq2 = getquadrantmask_@vsuf@(x, M_PI/2,M_PI);
+	maskq3 = getquadrantmask_@vsuf@(x, M_PI,3*M_PI/2);
+	maskq4 = getquadrantmask_@vsuf@(x, 3*M_PI/2,2*M_PI);
+	maskcos = _mm512_kor(maskq1,maskq3);
+	masksin = _mm512_kor(maskq2,maskq4);
+
+	// Transform x: 
+	// there is code dependency for everyline which can be eliminated
+	x = _mm512_mask_sub_@vsuf@(x,maskq2,x,pi_o_2);
+	x = _mm512_mask_mul_@vsuf@(x,maskq2,x,negone);
+	x = _mm512_mask_sub_@vsuf@(x,maskq3,x,pi);
+	x = _mm512_mask_sub_@vsuf@(x,maskq4,x,pi3_o_2);
+
+	@vtype512@ x2 = _mm512_mul_@vsuf@(negone, _mm512_mul_@vsuf@(x,x));
+	@vtype512@ cos = _mm512_mask_fmadd_@vsuf@(x2,maskcos,invfact[15],invfact[13]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[9]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[7]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[5]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[3]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[1]);
+	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,one);
+	cos  = _mm512_mask_mul_@vsuf@(cos,maskq3,cos,negone);
+	@vtype512@ sin = _mm512_mask_fmadd_@vsuf@(x2,masksin,invfact[14],invfact[12]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[10]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[8]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[6]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[4]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[2]);
+	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,one);
+	sin  = _mm512_mask_mul_@vsuf@(x,masksin,x,sin);
+	
+	_mm512_storeu_@vsuf@((@vtype512@ *)op, 
+				_mm512_mask_mov_@vsuf@(cos,masksin,sin));
+
+	ip += vector_size_bytes;
+	op += vector_size_bytes;
+	n -= vector_size_bytes;
+    }
+    // Last chunk of < vector_size_bytes elements
+    while (n){
+        op[0] = cosine_@vsufs@(ip[0]);
+        op++;
+        ip++;
+        n--;
+    }
+#else
+    while(n){ 
+        op[0] = cosine_@vsufs@(ip[0]);
+        op++;
+        ip++;
+        n--;
+    }
+#endif
+}
 
 static void
 sse2_sqrt_@TYPE@(@type@ * op, @type@ * ip, const npy_intp n)
