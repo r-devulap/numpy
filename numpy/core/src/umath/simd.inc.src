@@ -33,23 +33,6 @@
 #include <string.h> /* for memcpy */
 
 #define VECTOR_SIZE_BYTES 16
-double ifact[17] = {0.0,
-		    1.0,
-		    0.5,
-		    0.16666666666666666,
-		    0.041666666666666664,
-		    0.008333333333333333,
-		    0.001388888888888889,
-		    0.0001984126984126984,
-		    2.48015873015873E-05,
-		    2.7557319223985893E-06,
-		    2.755731922398589E-07,
-		    2.505210838544172E-08,
-		    2.08767569878681E-09,
-		    1.6059043836821613E-10,
-		    1.1470745597729725E-11,
-		    7.647163731819816E-13,
-		    2.8114572543455206E-15};
 
 static NPY_INLINE npy_uintp
 abs_ptrdiff(char *a, char *b)
@@ -974,19 +957,19 @@ inline @type@ cosine_@vsufs@(@type@ x){
     @type@ negx2 = -x*x;
     @type@ cos = 0;
     if ((quadrant == 0) || (quadrant == 2)){
-	cos = ifact[8] + negx2*ifact[10];
-	cos = ifact[6] + negx2*cos;
-	cos = ifact[4] + negx2*cos;
-	cos = ifact[2] + negx2*cos;
+	cos = NPY_INVFACTORIAL8 + negx2*NPY_INVFACTORIAL10;
+	cos = NPY_INVFACTORIAL6 + negx2*cos;
+	cos = NPY_INVFACTORIAL4 + negx2*cos;
+	cos = NPY_INVFACTORIAL2 + negx2*cos;
 	cos = 1 + negx2*cos;
 	if (quadrant == 2)
 	    cos=-1*cos;
     }
     else {
-	cos = ifact[9] + negx2*ifact[11];
-	cos = ifact[7] + negx2*cos;
-	cos = ifact[5] + negx2*cos;
-	cos = ifact[3] + negx2*cos;
+	cos = NPY_INVFACTORIAL9 + negx2*NPY_INVFACTORIAL11;
+	cos = NPY_INVFACTORIAL7 + negx2*cos;
+	cos = NPY_INVFACTORIAL5 + negx2*cos;
+	cos = NPY_INVFACTORIAL3 + negx2*cos;
 	cos = 1 + negx2*cos;
 	cos = x*cos;
     }
@@ -994,7 +977,8 @@ inline @type@ cosine_@vsufs@(@type@ x){
 }
 
 #ifdef __AVX512F__
-__mmask@numelem@ NPY_INLINE getquadrantmask_@vsuf@(@vtype512@ x, @type@ fmin, @type@ fmax){
+__mmask@numelem@ NPY_INLINE getquadrantmask_@vsuf@(@vtype512@ x, 
+						    @type@ fmin, @type@ fmax){
     __mmask@numelem@ m1 = _mm512_cmp_@vsuf@_mask(
 				x, _mm512_set1_@vsuf@(fmin), 29);// CMP_GE_OQ
     __mmask@numelem@ m2 = _mm512_cmp_@vsuf@_mask(
@@ -1007,11 +991,24 @@ static void
 sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
 {
 #ifdef __AVX512F__
-    printf("my vectorized cos\n");
     const npy_intp vector_size_bytes = 64;
     @vtype512@ invfact[16];
-    for (int ii=0; ii<16; ii++)
-	invfact[ii] = _mm512_set1_@vsuf@((@type@)ifact[ii+1]);
+    invfact[0] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL1);
+    invfact[1] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL2);
+    invfact[2] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL3);
+    invfact[3] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL4);
+    invfact[4] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL5);
+    invfact[5] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL6);
+    invfact[6] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL7);
+    invfact[7] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL8);
+    invfact[8] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL9);
+    invfact[9] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL10);
+    invfact[10] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL11);
+    invfact[11] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL12);
+    invfact[12] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL13);
+    invfact[13] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL14);
+    invfact[14] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL15);
+    invfact[15] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL16);
     @vtype512@ negone = _mm512_set1_@vsuf@(-1.00);
     @vtype512@ one = _mm512_set1_@vsuf@(1.00);
     @vtype512@ pi_o_2 = _mm512_set1_@vsuf@(M_PI/2);
@@ -1047,7 +1044,8 @@ sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
 	x = _mm512_mask_sub_@vsuf@(x,maskq4,x,pi3_o_2);
 
 	@vtype512@ x2 = _mm512_mul_@vsuf@(negone, _mm512_mul_@vsuf@(x,x));
-	@vtype512@ cos = _mm512_mask_fmadd_@vsuf@(x2,maskcos,invfact[15],invfact[13]);
+	@vtype512@ cos = _mm512_mask_fmadd_@vsuf@(x2,maskcos,
+						    invfact[15],invfact[13]);
 	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[9]);
 	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[7]);
 	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[5]);
@@ -1055,7 +1053,8 @@ sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
 	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,invfact[1]);
 	cos  = _mm512_mask_fmadd_@vsuf@(x2,maskcos,cos,one);
 	cos  = _mm512_mask_mul_@vsuf@(cos,maskq3,cos,negone);
-	@vtype512@ sin = _mm512_mask_fmadd_@vsuf@(x2,masksin,invfact[14],invfact[12]);
+	@vtype512@ sin = _mm512_mask_fmadd_@vsuf@(x2,masksin,
+						    invfact[14],invfact[12]);
 	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[10]);
 	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[8]);
 	sin  = _mm512_mask_fmadd_@vsuf@(x2,masksin,sin,invfact[6]);
