@@ -14,7 +14,7 @@
 
 #ifndef __NPY_SIMD_INC
 #define __NPY_SIMD_INC
-
+#include "cpuid.h"
 #include "lowlevel_strided_loops.h"
 #include "numpy/npy_common.h"
 #include "numpy/npy_math.h"
@@ -129,9 +129,9 @@ abs_ptrdiff(char *a, char *b)
  */
 
 /**begin repeat1
- * #func = cos, sqrt, absolute, negative, minimum, maximum#
- * #check = IS_BLOCKABLE_UNARY*4, IS_BLOCKABLE_REDUCE*2 #
- * #name = unary*4, unary_reduce*2#
+ * #func = sqrt, absolute, negative, minimum, maximum#
+ * #check = IS_BLOCKABLE_UNARY*3, IS_BLOCKABLE_REDUCE*2 #
+ * #name = unary*3, unary_reduce*2#
  */
 
 #if @vector@ && defined NPY_HAVE_SSE2_INTRINSICS
@@ -154,6 +154,36 @@ run_@name@_simd_@func@_@TYPE@(char **args, npy_intp *dimensions, npy_intp *steps
     return 0;
 }
 
+/**end repeat1**/
+
+/**begin repeat1
+ * #func = cos#
+ * #check = IS_BLOCKABLE_UNARY#
+ * #name = unary#
+ */
+
+#if @vector@ && defined NPY_HAVE_AVX512F_INTRINSICS
+
+/* prototypes */
+static void
+avx512_@func@_@TYPE@(@type@ *, @type@ *, const npy_intp n);
+
+#endif
+
+static NPY_INLINE int
+run_@name@_simd_@func@_@TYPE@(char **args, npy_intp *dimensions, npy_intp *steps)
+{
+#if @vector@ && defined NPY_HAVE_AVX512F_INTRINSICS
+    if (@check@(sizeof(@type@), VECTOR_SIZE_BYTES) &&
+					    (npy_cpu_supports("avx512f"))) {
+        avx512_@func@_@TYPE@((@type@*)args[1], (@type@*)args[0], dimensions[0]);
+        return 1;
+    }
+    else
+	return 0;
+#endif
+    return 0;
+}
 /**end repeat1**/
 
 /**begin repeat1
@@ -976,8 +1006,9 @@ inline @type@ cosine_@vsufs@(@type@ x){
     return cos;
 }
 
-#ifdef __AVX512F__
-__mmask@numelem@ NPY_INLINE getquadrantmask_@vsuf@(@vtype512@ x, 
+#if HAVE_ATTRIBUTE_TARGET_AVX512F
+NPY_GCC_OPT_3 NPY_GCC_TARGET_AVX512F 
+__mmask@numelem@ getquadrantmask_@vsuf@(@vtype512@ x, 
 						    @type@ fmin, @type@ fmax){
     __mmask@numelem@ m1 = _mm512_cmp_@vsuf@_mask(
 				x, _mm512_set1_@vsuf@(fmin), 29);// CMP_GE_OQ
@@ -985,12 +1016,11 @@ __mmask@numelem@ NPY_INLINE getquadrantmask_@vsuf@(@vtype512@ x,
 				x, _mm512_set1_@vsuf@(fmax), 17);// CMP_LT_OQ
     return _mm512_kand(m1,m2);
 }
-#endif
 
-static void
-sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
+NPY_GCC_OPT_3 NPY_GCC_TARGET_AVX512F void
+avx512_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
 {
-#ifdef __AVX512F__
+    printf("my cosine\n");
     const npy_intp vector_size_bytes = 64;
     @vtype512@ invfact[16];
     invfact[0] = _mm512_set1_@vsuf@(NPY_INVFACTORIAL1);
@@ -1077,15 +1107,8 @@ sse2_cos_@TYPE@(@type@ * op, @type@ * ip, npy_intp n)
         ip++;
         n--;
     }
-#else
-    while(n){ 
-        op[0] = cosine_@vsufs@(ip[0]);
-        op++;
-        ip++;
-        n--;
-    }
-#endif
 }
+#endif
 
 static void
 sse2_sqrt_@TYPE@(@type@ * op, @type@ * ip, const npy_intp n)

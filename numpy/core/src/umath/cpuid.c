@@ -42,7 +42,10 @@ NPY_NO_EXPORT int
 npy_cpu_supports(const char * feature)
 {
 #ifdef HAVE___BUILTIN_CPU_SUPPORTS
-    if (strcmp(feature, "avx2") == 0) {
+    if (strcmp(feature, "avx512f") == 0) {
+        return __builtin_cpu_supports("avx512f") && os_avx_support();
+    }
+    else if (strcmp(feature, "avx2") == 0) {
         return __builtin_cpu_supports("avx2") && os_avx_support();
     }
     else if (strcmp(feature, "avx") == 0) {
