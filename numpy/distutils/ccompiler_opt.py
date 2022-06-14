@@ -268,6 +268,7 @@ class _Config:
             extra_checks="AVX512F_REDUCE"
         ),
         AVX512CD = dict(interest=21, implies="AVX512F"),
+        AVX512FP16 = dict(interest=22, implies="AVX512F"),
         AVX512_KNL = dict(
             interest=40, implies="AVX512CD", group="AVX512ER AVX512PF",
             detect="AVX512_KNL", implies_detect=False
@@ -294,6 +295,10 @@ class _Config:
             interest=45, implies="AVX512_CLX AVX512_CNL",
             group="AVX512VBMI2 AVX512BITALG AVX512VPOPCNTDQ",
             detect="AVX512_ICL", implies_detect=False
+        ),
+        AVX512_SPR = dict(
+            interest=46, implies="AVX512_ICL AVX512FP16",
+            detect="AVX512_SPR", implies_detect=False
         ),
         # IBM/Power
         ## Power7/ISA 2.06
@@ -356,6 +361,7 @@ class _Config:
             AVX2   = dict(flags="-mavx2"),
             AVX512F = dict(flags="-mavx512f -mno-mmx"),
             AVX512CD = dict(flags="-mavx512cd"),
+            AVX512FP16 = dict(flags="-mavx512fp16"),
             AVX512_KNL = dict(flags="-mavx512er -mavx512pf"),
             AVX512_KNM = dict(
                 flags="-mavx5124fmaps -mavx5124vnniw -mavx512vpopcntdq"
@@ -365,7 +371,8 @@ class _Config:
             AVX512_CNL = dict(flags="-mavx512ifma -mavx512vbmi"),
             AVX512_ICL = dict(
                 flags="-mavx512vbmi2 -mavx512bitalg -mavx512vpopcntdq"
-            )
+            ),
+            AVX512_SPR = dict(flags="-mavx512fp16")
         )
         if on_x86 and self.cc_is_icc: return dict(
             SSE    = dict(flags="-msse"),
@@ -397,6 +404,7 @@ class _Config:
             AVX512_CLX = dict(flags="-xCASCADELAKE"),
             AVX512_CNL = dict(flags="-xCANNONLAKE"),
             AVX512_ICL = dict(flags="-xICELAKE-CLIENT"),
+            AVX512_SPR = dict(disable="Not supported yet")
         )
         if on_x86 and self.cc_is_iccw: return dict(
             SSE    = dict(flags="/arch:SSE"),
@@ -429,7 +437,8 @@ class _Config:
             AVX512_SKX = dict(flags="/Qx:SKYLAKE-AVX512"),
             AVX512_CLX = dict(flags="/Qx:CASCADELAKE"),
             AVX512_CNL = dict(flags="/Qx:CANNONLAKE"),
-            AVX512_ICL = dict(flags="/Qx:ICELAKE-CLIENT")
+            AVX512_ICL = dict(flags="/Qx:ICELAKE-CLIENT"),
+            AVX512_SPR = dict(disable="Not supported yet")
         )
         if on_x86 and self.cc_is_msvc: return dict(
             SSE = dict(flags="/arch:SSE") if self.cc_on_x86 else {},
@@ -467,7 +476,10 @@ class _Config:
             AVX512_SKX = dict(flags="/arch:AVX512"),
             AVX512_CLX = {},
             AVX512_CNL = {},
-            AVX512_ICL = {}
+            AVX512_ICL = {},
+            AVX512_SPR= dict(
+                disable="MSVC compiler doesn't support it"
+            )
         )
 
         on_power = self.cc_on_ppc64le or self.cc_on_ppc64
