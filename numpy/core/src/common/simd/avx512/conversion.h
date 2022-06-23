@@ -25,6 +25,10 @@
 #endif
 #define npyv_cvt_s32_b32 npyv_cvt_u32_b32
 #define npyv_cvt_s64_b64 npyv_cvt_u64_b64
+#ifdef NPY_HAVE_AVX512_SPR
+#define npyv_cvt_f16_f32 _mm512_cvtxph_ps 
+#define npyv_cvt_f32_f16 _mm512_cvtxps_ph 
+#endif
 #define npyv_cvt_f32_b32(BL) _mm512_castsi512_ps(npyv_cvt_u32_b32(BL))
 #define npyv_cvt_f64_b64(BL) _mm512_castsi512_pd(npyv_cvt_u64_b64(BL))
 
