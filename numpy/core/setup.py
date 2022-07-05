@@ -767,9 +767,11 @@ def configuration(parent_package='',top_path=None):
         subst_dict["msvc_mathlib"] = msvc_mlib
 
     npymath_sources = [join('src', 'npymath', 'npy_math_internal.h.src'),
+                       join('src', 'common', 'npy_cpu_features.c'),
                        join('src', 'npymath', 'npy_math.c'),
                        # join('src', 'npymath', 'ieee754.cpp'),
                        join('src', 'npymath', 'ieee754.c.src'),
+                       join('src', 'npymath', 'x86-halffloat.dispatch.c.src'),
                        join('src', 'npymath', 'npy_math_complex.c.src'),
                        join('src', 'npymath', 'halffloat.c')
                        ]

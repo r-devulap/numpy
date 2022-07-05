@@ -1,6 +1,12 @@
 #define NPY_NO_DEPRECATED_API NPY_API_VERSION
 
+#include "npy_cpu_features.h"
+#include "x86-halffloat.h"
 #include "numpy/halffloat.h"
+
+#ifndef NPY_DISABLE_OPTIMIZATION
+    #include "x86-halffloat.dispatch.h"
+#endif
 
 /*
  * This chooses between 'ties to even' and 'ties away from zero'.
@@ -22,6 +28,11 @@
 
 float npy_half_to_float(npy_half h)
 {
+    npy_float (*dispfunc)(npy_half) = NULL;
+    NPY_CPU_DISPATCH_CALL_XB(dispfunc = &x86_npy_half_to_float);
+    if (dispfunc) {
+        return (*dispfunc)(h);
+    }
     union { float ret; npy_uint32 retbits; } conv;
     conv.retbits = npy_halfbits_to_floatbits(h);
     return conv.ret;
@@ -36,6 +47,11 @@ double npy_half_to_double(npy_half h)
 
 npy_half npy_float_to_half(float f)
 {
+    npy_half (*dispfunc)(npy_float) = NULL;
+    NPY_CPU_DISPATCH_CALL_XB(dispfunc = &x86_npy_float_to_half);
+    if (dispfunc) {
+        return (*dispfunc)(f);
+    }
     union { float f; npy_uint32 fbits; } conv;
     conv.f = f;
     return npy_floatbits_to_halfbits(conv.fbits);

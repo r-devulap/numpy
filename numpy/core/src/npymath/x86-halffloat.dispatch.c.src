@@ -1,0 +1,33 @@
+/*@targets
+ * $maxopt $keep_baseline avx512_spr
+ */
+// policy $keep_baseline is used to avoid skip building avx512_spr
+// when its part of baseline features (--cpu-baseline), since
+// 'baseline' option isn't specified within targets.
+
+#include "x86-halffloat.h"
+#define NPY_NO_DEPRECATED_API NPY_API_VERSION
+
+#ifdef NPY_HAVE_AVX512_SPR
+#include "numpy/npy_math.h"
+
+#include "simd/simd.h"
+#include <immintrin.h>
+
+NPY_NO_EXPORT npy_float NPY_CPU_DISPATCH_CURFX(x86_npy_half_to_float)
+(npy_half num)
+{
+    __m128h f16 = _mm_load_sh(&num);
+    __m128  f32 = _mm_cvtxph_ps(f16);
+    return _mm_cvtss_f32(f32);
+}
+
+NPY_NO_EXPORT npy_half NPY_CPU_DISPATCH_CURFX(x86_npy_float_to_half)
+(npy_float num)
+{
+    __m128 f32 = _mm_load_ss(&num);
+    __m128h f16 = _mm_cvtxps_ph(f32);
+    return _mm_extract_epi16(_mm_castph_si128(f16), 0);
+}
+
+#endif  // NPY_HAVE_AVX512_SPR
